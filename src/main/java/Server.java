@@ -1,56 +1,70 @@
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.*;
-import java.net.ServerSocket;
-import java.net.Socket;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Properties;
+import java.net.*;
+import java.nio.ByteBuffer;
+import java.nio.file.Files;
 
 public class Server {
-
-    private static final Logger log = LoggerFactory.getLogger(Server.class);
-
-    private static DataOutputStream dataOutputStream = null;
-    private static DataInputStream dataInputStream = null;
-
-    public static void startServer(int portNumber) {
-        try(ServerSocket serverSocket = new ServerSocket(portNumber)){
-            log.info("Listening to client connections on http://localhost:{} ...", portNumber);
-
-            Socket clientSocket = serverSocket.accept();
-            log.info("Connection request made to server ...");
-
-            dataInputStream = new DataInputStream(clientSocket.getInputStream());
-            dataOutputStream = new DataOutputStream(clientSocket.getOutputStream());
-
-            receiveFile("serverFileHolder/NewFile1.txt");
-
-            dataInputStream.close();
-            dataOutputStream.close();
-            clientSocket.close();
-
-        } catch (Exception e){
-            log.error("Connection failed with Error : {}", e.getMessage());
-        }
-    }
-
-    private static void receiveFile(String fileName) throws Exception{
-        int bytes = 0;
-        FileOutputStream fileOutputStream = new FileOutputStream(fileName);
-
-        long size = dataInputStream.readLong();     // read file size
-        byte[] buffer = new byte[4*1024];
-        while (size > 0 && (bytes = dataInputStream.read(buffer, 0, (int)Math.min(buffer.length, size))) != -1) {
-            fileOutputStream.write(buffer,0,bytes);
-            size -= bytes;      // read upto file size
-        }
-        fileOutputStream.close();
-    }
+    private static final int UDP_PORT = 8000;
+    private static final int MAX_PACKET_SIZE = 2000; // Maximum packet size for your network
 
     public static void main(String[] args) {
-        startServer(8000);
+        try {
+            startServer();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static void startServer() throws IOException {
+        DatagramSocket udpSocket = new DatagramSocket(UDP_PORT);
+        byte[] buffer = new byte[MAX_PACKET_SIZE];
+
+        while (true) {
+            DatagramPacket fileInfoPacket = new DatagramPacket(buffer, buffer.length);
+            udpSocket.receive(fileInfoPacket);
+
+            ByteArrayInputStream byteStream = new ByteArrayInputStream(fileInfoPacket.getData());
+            DataInputStream dataInputStream = new DataInputStream(byteStream);
+
+            String fileName = dataInputStream.readUTF();
+            long fileSize = dataInputStream.readLong();
+
+            File file = new File("serverFileHolder/" + fileName); // Replace with the desired save path
+            FileOutputStream fileOutputStream = new FileOutputStream(file);
+
+            long totalBytesReceived = 0;
+            int expectedPacketNumber = 0;
+
+            while (totalBytesReceived < fileSize) {
+                DatagramPacket dataPacket = new DatagramPacket(buffer, buffer.length);
+                udpSocket.receive(dataPacket);
+
+                ByteArrayInputStream packetByteStream = new ByteArrayInputStream(dataPacket.getData());
+                DataInputStream packetDataInputStream = new DataInputStream(packetByteStream);
+
+                int packetNumber = packetDataInputStream.readInt();
+                byte[] packetData = new byte[dataPacket.getLength() - 4]; // Subtract 4 bytes for packet number
+                packetDataInputStream.read(packetData);
+
+                if (packetNumber == expectedPacketNumber) {
+                    fileOutputStream.write(packetData);
+                    totalBytesReceived += packetData.length;
+                    System.out.println("Received " + totalBytesReceived + " bytes out of " + fileSize + " bytes");
+
+                    // Send acknowledgement for the received packet
+                    ByteBuffer ackBuffer = ByteBuffer.allocate(4);
+                    ackBuffer.putInt(expectedPacketNumber);
+                    byte[] ackBytes = ackBuffer.array();
+                    DatagramPacket ackPacket = new DatagramPacket(ackBytes, ackBytes.length, dataPacket.getSocketAddress());
+                    udpSocket.send(ackPacket);
+
+                    expectedPacketNumber++;
+                }
+            }
+
+            System.out.println("File transfer complete");
+
+            fileOutputStream.close();
+        }
     }
 }

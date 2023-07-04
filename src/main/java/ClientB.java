@@ -1,80 +1,88 @@
 import java.io.*;
-import java.net.*;
-import java.nio.ByteBuffer;
+import java.net.ServerSocket;
+import java.net.Socket;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import java.util.Arrays;
 
 public class ClientB {
-    private static final int UDP_PORT = 8000;
-    private static final int MAX_PACKET_SIZE = 2000; // Maximum packet size for your network
+    private Socket clientBSocketObj;
+    private DataInputStream inputStream;
+    private DataOutputStream outputStream;
+    private File[] clientBFiles;
+    private ServerSocket clientSocket;
+    private String[] clientBDirectoryFiles;
+    private String fileModified;
 
-    public static void main(String[] args) {
+    public ClientB(int portNumber) {
         try {
-            String filePath = "clientFileHolder/text_small.txt"; // Replace with the actual file path
-            sendFile(filePath);
-        } catch (IOException e) {
-            e.printStackTrace();
+            clientSocket = new ServerSocket(portNumber);
+            System.out.println("Client B has been started successfully!!");
+
+            clientBSocketObj = clientSocket.accept();
+            System.out.println("Client B is connected successfully to the Server!!");
+
+            inputStream = new DataInputStream(new BufferedInputStream(clientBSocketObj.getInputStream()));
+            outputStream = new DataOutputStream(clientBSocketObj.getOutputStream());
+
+            File pathDirectory = new File("./ClientB_dir");
+            clientBFiles = pathDirectory.listFiles();
+
+            DateFormat dateFormat = new SimpleDateFormat("dd-MMM");
+
+            clientBDirectoryFiles = new String[clientBFiles.length];
+
+            int counter = 0;
+            for (File file : clientBFiles) {
+                clientBDirectoryFiles[counter] = file.getName() + "\t" + file.length() / 1024 + "KB" + "\t" + dateFormat.format(file.lastModified());
+                counter++;
+            }
+
+            try {
+                PrintWriter printWriter = new PrintWriter(clientBSocketObj.getOutputStream(), true);
+                printWriter.println(Arrays.toString(clientBDirectoryFiles));
+                clientSocket.close();
+                clientBSocketObj.close();
+            } catch (IOException io) {
+                System.out.println("The Server faced an input-output exception: " + io);
+            }
+        } catch (IOException ioMain) {
+            System.out.println("Client A could not be connected to Client B due to an input-output exception: " + ioMain);
         }
     }
 
-    public static void sendFile(String filePath) throws IOException {
-        File file = new File(filePath);
-        String fileName = file.getName();
-        long fileSize = file.length();
+    public void compareFilesDirB(File[] fileDirB, String filesInDirA) throws IOException {
+        if (!"false".equals(filesInDirA)) {
+            int counter = 0;
+            DateFormat dateFormat = new SimpleDateFormat("dd-MMM");
+            String[] fileListDirA = filesInDirA.split(",");
+            String[] fileDetailsDirAString = new String[fileListDirA.length];
 
-        // Create a UDP socket for data transfer
-        try (DatagramSocket udpSocket = new DatagramSocket()) {
-            InetAddress serverAddress = InetAddress.getByName("localhost");
-
-            // Send file name and file size to the server
-            ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
-            DataOutputStream dataOutputStream = new DataOutputStream(byteStream);
-            dataOutputStream.writeUTF(fileName);
-            dataOutputStream.writeLong(fileSize);
-
-            byte[] fileInfo = byteStream.toByteArray();
-            DatagramPacket fileInfoPacket = new DatagramPacket(fileInfo, fileInfo.length, serverAddress, UDP_PORT);
-            udpSocket.send(fileInfoPacket);
-
-            // Read file data in chunks and send them as UDP packets
-            byte[] buffer = new byte[MAX_PACKET_SIZE - 8]; // Subtract 8 bytes for file name and size
-            BufferedInputStream fileInputStream = new BufferedInputStream(new FileInputStream(file));
-
-            int bytesRead;
-            long totalBytesSent = 0;
-            int packetNumber = 0;
-
-            while ((bytesRead = fileInputStream.read(buffer)) != -1) {
-                byte[] packetData = new byte[bytesRead];
-                System.arraycopy(buffer, 0, packetData, 0, bytesRead);
-
-                // Create a packet with packet number and data
-                ByteArrayOutputStream packetByteStream = new ByteArrayOutputStream();
-                DataOutputStream packetDataOutputStream = new DataOutputStream(packetByteStream);
-                packetDataOutputStream.writeInt(packetNumber);
-                packetDataOutputStream.write(packetData);
-
-                byte[] packetBytes = packetByteStream.toByteArray();
-                DatagramPacket dataPacket = new DatagramPacket(packetBytes, packetBytes.length, serverAddress, UDP_PORT);
-
-                // Send the packet
-                udpSocket.send(dataPacket);
-
-                // Wait for acknowledgement
-                byte[] ackBuffer = new byte[4];
-                DatagramPacket ackPacket = new DatagramPacket(ackBuffer, ackBuffer.length);
-                udpSocket.receive(ackPacket);
-
-                int ackPacketNumber = ByteBuffer.wrap(ackPacket.getData()).getInt();
-                if (ackPacketNumber == packetNumber) {
-                    totalBytesSent += bytesRead;
-                    System.out.println("Sent " + totalBytesSent + " bytes out of " + fileSize + " bytes");
-                    packetNumber++;
+            for (int i = 0; i < fileListDirA.length; i++) {
+                fileDetailsDirAString[i] = fileListDirA[i].replaceAll("\\[", "").replaceAll("\\]", "");
+                counter++;
+            }
+            counter = 0;
+            for (File file : fileDirB) {
+                for (String fileDetails : fileDetailsDirAString) {
+                    if (!file.getName().equals(fileDetails.substring(fileDetails.lastIndexOf('\\') + 1))) {
+                        fileModified = fileDetails;
+                        Path source = file.toPath();
+                        Path destination = new File("./ClientA_dir/" + file.getName()).toPath();
+                        Files.copy(source, destination, StandardCopyOption.REPLACE_EXISTING);
+                    }
+                    counter++;
                 }
             }
+        }
+    }
 
-            System.out.println("File transfer complete");
-
-            fileInputStream.close();
+    public static void main(String[] args) {
+        while (true) {
+            ClientB clientBObj = new ClientB(8002);
         }
     }
 }

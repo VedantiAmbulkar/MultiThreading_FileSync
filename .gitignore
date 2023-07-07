@@ -25,3 +25,7 @@ replay_pid*
 
 #IntelliJ Files
 .idea/
+clientFileHolder/
+serverFileHolder/
+
+.DS_Store

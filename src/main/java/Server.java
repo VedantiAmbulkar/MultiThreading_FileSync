@@ -1,70 +1,79 @@
 import java.io.*;
 import java.net.*;
-import java.nio.ByteBuffer;
-import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Objects;
 
 public class Server {
-    private static final int UDP_PORT = 8000;
-    private static final int MAX_PACKET_SIZE = 2000; // Maximum packet size for your network
+    public List<String> clientFileList = new ArrayList<>();
+    public List<String> serverFileList = new ArrayList<>();
 
-    public static void main(String[] args) {
-        try {
-            startServer();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+    public Server() {
     }
 
-    public static void startServer() throws IOException {
-        DatagramSocket udpSocket = new DatagramSocket(UDP_PORT);
-        byte[] buffer = new byte[MAX_PACKET_SIZE];
+    static Thread serverThread = new Thread(() -> {
+        Server server = new Server();
+        try (DatagramSocket serverSocket = new DatagramSocket(Constants.ServerPort)) {
+            System.out.println("Server started. \nListening on port: localhost:" + Constants.ServerPort + "\n");
+            while (true) {
+                String clientRequest = TransmissionHandler.receiveData(serverSocket);
+                System.out.println("Client request: " + clientRequest);
+                if (Objects.equals(clientRequest.trim(), "AcceptFileList")) {
+                    server.serverFileList = Utils.getFileList(Constants.serverFileHolder);
+                    String clientMessage = TransmissionHandler.receiveData(serverSocket);
+                    System.out.println(clientMessage);
+                    server.clientFileList.addAll(
+                            Arrays.stream(clientMessage.substring(1, clientMessage.length() - 1).split(","))
+                                    .map(String::trim)
+                                    .filter(file -> !server.clientFileList.contains(file) && !file.equals(".DS_Store"))
+                                    .toList()
+                    );
 
-        while (true) {
-            DatagramPacket fileInfoPacket = new DatagramPacket(buffer, buffer.length);
-            udpSocket.receive(fileInfoPacket);
 
-            ByteArrayInputStream byteStream = new ByteArrayInputStream(fileInfoPacket.getData());
-            DataInputStream dataInputStream = new DataInputStream(byteStream);
+                    System.out.println(server.serverFileList + "___" + server.clientFileList);
 
-            String fileName = dataInputStream.readUTF();
-            long fileSize = dataInputStream.readLong();
-
-            File file = new File("serverFileHolder/" + fileName); // Replace with the desired save path
-            FileOutputStream fileOutputStream = new FileOutputStream(file);
-
-            long totalBytesReceived = 0;
-            int expectedPacketNumber = 0;
-
-            while (totalBytesReceived < fileSize) {
-                DatagramPacket dataPacket = new DatagramPacket(buffer, buffer.length);
-                udpSocket.receive(dataPacket);
-
-                ByteArrayInputStream packetByteStream = new ByteArrayInputStream(dataPacket.getData());
-                DataInputStream packetDataInputStream = new DataInputStream(packetByteStream);
-
-                int packetNumber = packetDataInputStream.readInt();
-                byte[] packetData = new byte[dataPacket.getLength() - 4]; // Subtract 4 bytes for packet number
-                packetDataInputStream.read(packetData);
-
-                if (packetNumber == expectedPacketNumber) {
-                    fileOutputStream.write(packetData);
-                    totalBytesReceived += packetData.length;
-                    System.out.println("Received " + totalBytesReceived + " bytes out of " + fileSize + " bytes");
-
-                    // Send acknowledgement for the received packet
-                    ByteBuffer ackBuffer = ByteBuffer.allocate(4);
-                    ackBuffer.putInt(expectedPacketNumber);
-                    byte[] ackBytes = ackBuffer.array();
-                    DatagramPacket ackPacket = new DatagramPacket(ackBytes, ackBytes.length, dataPacket.getSocketAddress());
-                    udpSocket.send(ackPacket);
-
-                    expectedPacketNumber++;
+                    for (String f : server.clientFileList) {
+                        System.out.println(f);
+                        if (!server.serverFileList.contains(f.trim())) {
+                            TransmissionHandler.sendData("FileRequest: " + f, Constants.UserClientPort);
+                            TransmissionHandler.receiveFile(serverSocket);
+                            System.out.println(f + " received.");
+                            Thread.sleep(2000);
+                        }
+                    }
+                    TransmissionHandler.sendData("Clear", Constants.UserClientPort);
                 }
+                if (Objects.equals(clientRequest.split(":")[0].trim(), "DeleteFile")) {
+                    String fileName = clientRequest.split(":")[1];
+                    File toBeDeletedFile = new File(Constants.serverFileHolder + fileName);
+                    if (toBeDeletedFile.delete()) {
+                        server.serverFileList.remove(fileName);
+                        server.clientFileList.remove(fileName);
+                        System.out.println("Deleted the file: " + toBeDeletedFile.getName());
+                    } else {
+                        System.out.println("Failed to delete the file.");
+                    }
+                }
+
+                System.out.println("All the client files are synchronized.\n");
+
             }
+        } catch (Exception e) {
+            System.out.println(e.getMessage());
+        }
+    });
 
+    public static void main(String[] args) {
+        serverThread.start();
+    }
+
+    public static void fileReceiver(DatagramSocket serverSocket) throws IOException {
+        try {
+            TransmissionHandler.receiveFile(serverSocket);
             System.out.println("File transfer complete");
-
-            fileOutputStream.close();
+        } catch (Exception e) {
+            System.out.println(e.getMessage());
         }
     }
 }

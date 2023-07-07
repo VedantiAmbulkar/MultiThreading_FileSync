@@ -2,6 +2,7 @@ import java.net.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 public class UserClient {
@@ -17,6 +18,7 @@ public class UserClient {
     });
 
     public static volatile String trigger = "C";
+    public static volatile String modFileName = "";
 
     static Thread UserClient = new Thread(() -> {
         UserClient userClient = new UserClient();
@@ -26,9 +28,6 @@ public class UserClient {
                 if (Objects.deepEquals(trigger, "D")) {
                     userClient.clientFileList = Utils.getFileList(Constants.clientFileHolder);
                     for (String file : userClient.serverFileList) {
-                        if (userClient.clientFileList.contains(file)) {
-                            continue;
-                        }
                         System.out.println("Requesting server to delete file: " + file);
                         TransmissionHandler.sendData("DeleteFile:" + file, Constants.ServerPort);
                     }
@@ -48,10 +47,21 @@ public class UserClient {
                             userClient.serverFileList.add(fileName);
                         }
                     }
-
                     userClient.serverFileList = new ArrayList<>(userClient.clientFileList);
                     trigger = "";
                 } else if (Objects.deepEquals(trigger, "M")) {
+                    TransmissionHandler.sendData("AcceptModifiedFile:" + modFileName, Constants.ServerPort);
+                    String serverMessage = "";
+                    while (!serverMessage.equals("Clear")) {
+                        serverMessage = TransmissionHandler.receiveData(clientSocket);
+                        System.out.println(serverMessage);
+                        if (serverMessage.split(":")[0].equals("FileRequest")) {
+                            String fileName = serverMessage.split(":")[1].trim();
+                            System.out.println("Sending file " + fileName + " to server.");
+                            TransmissionHandler.sendFile(Constants.clientFileHolder + fileName);
+                            userClient.serverFileList.add(fileName);
+                        }
+                    }
                     trigger = "";
                 }
             }
@@ -61,6 +71,12 @@ public class UserClient {
     });
 
     public static void setTrigger(String flag) {
+
+        trigger = flag;
+    }
+
+    public static void setTrigger(String flag, String fileName) {
+        modFileName = fileName;
         trigger = flag;
     }
 

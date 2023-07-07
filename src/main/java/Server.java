@@ -23,28 +23,40 @@ public class Server {
                     server.serverFileList = Utils.getFileList(Constants.serverFileHolder);
                     String clientMessage = TransmissionHandler.receiveData(serverSocket);
                     System.out.println(clientMessage);
-                    server.clientFileList.addAll(
-                            Arrays.stream(clientMessage.substring(1, clientMessage.length() - 1).split(","))
-                                    .map(String::trim)
-                                    .filter(file -> !server.clientFileList.contains(file) && !file.equals(".DS_Store"))
-                                    .toList()
-                    );
-
-
-                    System.out.println(server.serverFileList + "___" + server.clientFileList);
-
-                    for (String f : server.clientFileList) {
-                        System.out.println(f);
-                        if (!server.serverFileList.contains(f.trim())) {
-                            TransmissionHandler.sendData("FileRequest: " + f, Constants.UserClientPort);
-                            TransmissionHandler.receiveFile(serverSocket);
-                            System.out.println(f + " received.");
-                            Thread.sleep(2000);
+                    if (clientMessage.equals("[]")) {
+                        continue;
+                    } else {
+                        server.clientFileList.addAll(
+                                Arrays.stream(
+                                                clientMessage
+                                                        .substring(1, clientMessage.length() - 1)
+                                                        .split(","))
+                                        .map(String::trim)
+                                        .filter(file -> !server.clientFileList.contains(file) && !file.equals(".DS_Store"))
+                                        .toList()
+                        );
+                        for (String f : server.clientFileList) {
+                            System.out.println(f);
+                            if (!server.serverFileList.contains(f.trim())) {
+                                TransmissionHandler.sendData("FileRequest: " + f, Constants.UserClientPort);
+                                TransmissionHandler.receiveFile(serverSocket);
+                                System.out.println(f + " received.");
+                                Thread.sleep(2000);
+                            }
                         }
                     }
+
                     TransmissionHandler.sendData("Clear", Constants.UserClientPort);
-                }
-                if (Objects.equals(clientRequest.split(":")[0].trim(), "DeleteFile")) {
+                } else if (Objects.equals(clientRequest.split(":")[0].trim(), "AcceptModifiedFile")) {
+                    String fileName = clientRequest.split(":")[1];
+                    if (fileName.equals(".DS_Store")) {
+                        continue;
+                    }
+                    TransmissionHandler.sendData("FileRequest: " + fileName, Constants.UserClientPort);
+                    TransmissionHandler.receiveFile(serverSocket);
+                    System.out.println(fileName + " received.");
+                    TransmissionHandler.sendData("Clear", Constants.UserClientPort);
+                } else if (Objects.equals(clientRequest.split(":")[0].trim(), "DeleteFile")) {
                     String fileName = clientRequest.split(":")[1];
                     File toBeDeletedFile = new File(Constants.serverFileHolder + fileName);
                     if (toBeDeletedFile.delete()) {
@@ -59,7 +71,8 @@ public class Server {
                 System.out.println("All the client files are synchronized.\n");
 
             }
-        } catch (Exception e) {
+        } catch (
+                Exception e) {
             System.out.println(e.getMessage());
         }
     });

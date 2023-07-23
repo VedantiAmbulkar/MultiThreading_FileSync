@@ -2,14 +2,12 @@ import java.io.*;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
-import java.net.SocketException;
 import java.nio.ByteBuffer;
 
-@SuppressWarnings("InfiniteLoopStatement")
 public class TransmissionHandler {
 
 
-    public static void receiveFile(DatagramSocket serverSocket) throws IOException {
+    public static void receiveFile(DatagramSocket serverSocket, String folder) throws IOException {
         byte[] buffer = new byte[Constants.MAX_PACKET_SIZE];
 
         DatagramPacket fileInfoPacket = new DatagramPacket(buffer, buffer.length);
@@ -21,7 +19,7 @@ public class TransmissionHandler {
         String fileName = dataInputStream.readUTF();
         long fileSize = dataInputStream.readLong();
 
-        File file = new File("serverFileHolder/" + fileName); // Replace with the desired save path
+        File file = new File(folder + fileName);
         FileOutputStream fileOutputStream = new FileOutputStream(file);
 
         long totalBytesReceived = 0;
@@ -87,11 +85,11 @@ public class TransmissionHandler {
             clientSocket.close();
 
         } catch (Exception e) {
-            System.out.println(e.getMessage());
+            e.printStackTrace();
         }
     }
 
-    public static void sendFile(String filePath) throws IOException {
+    public static void sendFile(String filePath, Integer port) throws IOException {
         File file = new File(filePath);
         String fileName = file.getName();
         long fileSize = file.length();
@@ -107,7 +105,7 @@ public class TransmissionHandler {
             dataOutputStream.writeLong(fileSize);
 
             byte[] fileInfo = byteStream.toByteArray();
-            DatagramPacket fileInfoPacket = new DatagramPacket(fileInfo, fileInfo.length, serverAddress, Constants.ServerPort);
+            DatagramPacket fileInfoPacket = new DatagramPacket(fileInfo, fileInfo.length, serverAddress, port);
             udpSocket.send(fileInfoPacket);
 
             // Read file data in chunks and send them as UDP packets
@@ -129,7 +127,7 @@ public class TransmissionHandler {
                 packetDataOutputStream.write(packetData);
 
                 byte[] packetBytes = packetByteStream.toByteArray();
-                DatagramPacket dataPacket = new DatagramPacket(packetBytes, packetBytes.length, serverAddress, Constants.ServerPort);
+                DatagramPacket dataPacket = new DatagramPacket(packetBytes, packetBytes.length, serverAddress, port);
 
                 // Send the packet
                 udpSocket.send(dataPacket);

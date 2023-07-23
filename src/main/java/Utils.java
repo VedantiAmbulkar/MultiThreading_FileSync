@@ -10,6 +10,7 @@ public class Utils {
             File[] files = folder.listFiles();
             if (files != null) {
                 for (File file : files) {
+                    if (file.getName().equals(".DS_Store")) continue;
                     fileList.add(file.getName());
                 }
             }

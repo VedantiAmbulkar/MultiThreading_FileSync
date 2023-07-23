@@ -1,12 +1,21 @@
 import java.nio.file.*;
 
 public class FileWatcher {
-    public static void start(String folderPath) throws Exception {
-        System.out.println("File Watcher service started for " + folderPath);
+
+    private String folderPath = "";
+    private Client client = null;
+
+    public FileWatcher(String folderPath, Client client) {
+        this.folderPath = folderPath;
+        this.client = client;
+    }
+
+    public void start() throws Exception {
+        System.out.println("File Watcher service active for " + this.folderPath);
         WatchService watchService = FileSystems.getDefault().newWatchService();
 
 
-        Path folder = Paths.get(folderPath);
+        Path folder = Paths.get(this.folderPath);
         folder.register(watchService, StandardWatchEventKinds.ENTRY_CREATE,
                 StandardWatchEventKinds.ENTRY_MODIFY, StandardWatchEventKinds.ENTRY_DELETE);
 
@@ -25,16 +34,16 @@ public class FileWatcher {
 
                 if (kind == StandardWatchEventKinds.ENTRY_CREATE) {
                     System.out.println("File created: " + fileName);
-                    UserClient.setTrigger("C");
+                    client.setTrigger("C");
                 } else if (kind == StandardWatchEventKinds.ENTRY_MODIFY) {
                     if (fileName.getFileName().toString().equals(".DS_Store")) {
                         continue;
                     }
                     System.out.println("File modified: " + fileName);
-                    UserClient.setTrigger("M", fileName.toString());
+                    client.setTrigger("M", fileName.toString());
                 } else if (kind == StandardWatchEventKinds.ENTRY_DELETE) {
                     System.out.println("File deleted: " + fileName);
-                    UserClient.setTrigger("D");
+                    client.setTrigger("D");
                 }
             }
 
